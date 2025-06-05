@@ -1,4 +1,4 @@
-# 学术智能体 AcAgaent(Academic Agent)
+# 学术智能体 (AcAgent)
 
 这是一个基于 LangGraph 和 Qwen API 构建的学术智能体，能够帮助研究人员进行文献检索、论文分析、写作润色等学术工作。
 
