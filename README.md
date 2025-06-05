@@ -9,6 +9,7 @@
 - 学术写作润色
 - 数据分析支持
 - 参考文献生成
+- BibTeX 文本解析
 - 支持多轮对话交互
 
 ## 安装要求
@@ -45,6 +46,7 @@ python cli.py
 - `polish <文本>` - 润色学术文本
 - `analyze <数据类型>` - 分析研究数据
 - `cite <文献ID> [格式]` - 生成引用（支持 APA/MLA 格式）
+- `parse_bibtex <BibTeX 文本>` - 解析 BibTeX 格式的文献信息
 - `help` - 显示帮助信息
 - `exit` - 退出程序
 
@@ -55,6 +57,7 @@ python cli.py
 > polish 这是一段需要润色的学术文本
 > analyze descriptive
 > cite 1 apa
+> parse_bibtex @article{...}
 ```
 
 ### 编程接口

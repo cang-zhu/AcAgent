@@ -104,6 +104,128 @@ class AcademicTools:
             print(f"[DEBUG] 搜索论文时发生错误: {str(e)}")
             return []
 
+    def qwen_search_papers(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+        """使用 Qwen 模型自带联网搜索功能搜索学术论文"""
+        results = []
+        try:
+            print(f"[DEBUG] 使用 Qwen 联网搜索: {query}")
+            messages = [
+                {"role": "system", "content": "你是一个帮助用户搜索学术论文的助手，请根据用户的搜索请求利用你的联网能力查找相关文献。"},
+                {"role": "user", "content": f"请帮我搜索关于\"{query}\"的学术论文。请提供找到的文献的标题、作者、发表年份、摘要和可能的链接。请尝试找到至少 {max_results} 篇相关文献。"}
+            ]
+            
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=messages,
+                temperature=0.5,
+                max_tokens=self.max_tokens,
+                extra_body={"enable_search": True}
+            )
+            
+            if response and response.choices and response.choices[0].message.content:
+                raw_content = response.choices[0].message.content
+                print(f"[DEBUG] Qwen 联网搜索原始返回内容: {raw_content[:500]}...")
+                
+                # 尝试提示模型以 JSON 格式返回，并解析
+                prompt_for_json = f"""
+                请根据您刚才关于\"{query}\"的联网搜索结果，将找到的文献信息 정리하여 以 JSON 数组格式返回。每个对象包含以下字段：title, authors (作者列表), year, abstract, url (如果可用)。如果找不到文献，返回空数组 []。
+                """
+                
+                messages_for_json = [
+                     {"role": "system", "content": "你是一个学术文献信息提取助手，请将提供的文本中的文献信息转化为指定的 JSON 格式。"},
+                     {"role": "user", "content": f"原始搜索结果:\n{raw_content}\n\n请将其转换为 JSON 数组格式，字段包括 title, authors, year, abstract, url。"}
+                ]
+                
+                try:
+                    response_json = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=messages_for_json,
+                        temperature=0.1,
+                        max_tokens=self.max_tokens,
+                        extra_body={"enable_thinking": False}
+                    )
+                    
+                    if response_json and response_json.choices and response_json.choices[0].message.content:
+                        json_text = response_json.choices[0].message.content.strip()
+                        # 清理可能的Markdown代码块
+                        if json_text.startswith('```json'):
+                             json_text = json_text[len('```json'):].strip()
+                        if json_text.endswith('```'):
+                             json_text = json_text[:-len('```')].strip()
+                             
+                        parsed_results = json.loads(json_text)
+                        if isinstance(parsed_results, list):
+                             # 进一步处理结果，如生成 friendly_summary (可选)
+                             final_results = []
+                             for paper_info in parsed_results:
+                                 # 在这里可以添加生成 friendly_summary 的逻辑，或者在工作流后续步骤处理
+                                 final_results.append(paper_info)
+                             return final_results[:max_results]
+                        else:
+                             print(f"[DEBUG] Qwen 联网搜索 JSON 解析结果非列表: {parsed_results}")
+                             return []
+                    else:
+                         print("[DEBUG] Qwen 联网搜索 JSON 提取失败或返回为空")
+                         return []
+                         
+                except json.JSONDecodeError:
+                    print(f"[DEBUG] 无法解析 Qwen 联网搜索返回的 JSON 数据: {json_text}")
+                    return []
+                except Exception as json_e:
+                     print(f"[DEBUG] 处理 Qwen 联网搜索结果时发生错误: {str(json_e)}")
+                     return []
+            else:
+                print("[DEBUG] Qwen 联网搜索 API 返回为空或格式不正确")
+                return []
+                
+        except Exception as e:
+            print(f"[DEBUG] Qwen 联网搜索时发生错误: {str(e)}")
+            return []
+
+    def parse_bibtex(self, bibtex_string: str) -> List[Dict[str, Any]]:
+        """解析 BibTeX 字符串，提取文献信息"""
+        results = []
+        try:
+            import bibtexparser
+            
+            # 解析 BibTeX 字符串
+            bib_database = bibtexparser.loads(bibtex_string)
+            
+            print(f"[DEBUG] BibTeX 解析找到 {len(bib_database.entries)} 条目")
+            
+            # 转换 BibTeX 条目为内部格式
+            for entry in bib_database.entries:
+                # 提取常用字段，并进行一些基本的清理和格式化
+                title = entry.get('title', '').replace('{', '').replace('}', '')
+                authors_str = entry.get('author', '')
+                authors = [a.strip() for a in authors_str.replace('and', ',').split(',')] if authors_str else []
+                year = entry.get('year', '')
+                abstract = entry.get('abstract', '').replace('{', '').replace('}', '')
+                # 尝试从多个字段获取 URL
+                url = entry.get('url', entry.get('link', entry.get('doi', '')))
+                
+                # 创建内部格式字典
+                paper_info = {
+                    'title': title,
+                    'authors': authors,
+                    'year': year,
+                    'abstract': abstract,
+                    'url': url,
+                    'source_type': 'bibtex' # 标记来源
+                }
+                
+                results.append(paper_info)
+                
+            print(f"[DEBUG] BibTeX 解析并格式化 {len(results)} 篇文献信息")
+            return results
+        
+        except ImportError:
+             print("[DEBUG] 错误：未安装 bibtexparser 库。请运行 pip install bibtexparser")
+             return []
+        except Exception as e:
+            print(f"[DEBUG] 解析 BibTeX 时出错: {str(e)}")
+            return []
+
     def summarize_paper(self, paper: Dict[str, Any]) -> str:
         """生成论文摘要"""
         # 确保必要的字段存在
@@ -272,4 +394,8 @@ class AcademicTools:
         elif style == 'mla':
             return f"{authors}. \"{title}.\" {journal} {year}"
         else:
-            return f"{authors} ({year}). {title}" 
+            return f"{authors} ({year}). {title}"
+
+    def test_placeholder(self):
+        """这是一个占位函数"""
+        print("Placeholder function called") 
