@@ -27,7 +27,7 @@ QWEN_API_KEY=your_qwen_api_key_here
 DASHSCOPE_API_KEY=your_qwen_api_key_here  # 新版 dashscope 需要
 QWEN_MODEL_NAME=qwen3-235b-a22b
 QWEN_TEMPERATURE=0.5
-QWEN_MAX_TOKENS=128000
+QWEN_MAX_TOKENS=16384
 ```
 
 ## 使用方法
@@ -102,7 +102,7 @@ python test_agent.py
 
 测试用例包括：
 
-1. `test_search_papers`: 测试文献搜索功能
+1. `test_search_papers`: 测试文献搜索功能（使用 scholarly 和 Qwen API 生成友好摘要）
    - 验证搜索结果格式
    - 检查必要字段（标题、摘要等）
    - 测试错误处理
@@ -139,7 +139,8 @@ python test_agent.py
 
 ## 技术特点
 
-- 使用 Qwen API 进行自然语言处理
+- 使用 Qwen API 进行自然语言处理（包括摘要精炼）
+- 集成 scholarly 库进行专业的谷歌学术文献检索
 - 基于 LangGraph 的工作流管理
 - 支持多智能体协作
 - 模块化设计，易于扩展
@@ -155,7 +156,7 @@ python test_agent.py
 - `DASHSCOPE_API_KEY`: DashScope API 密钥（新版必需）
 - `QWEN_MODEL_NAME`: 使用的模型名称（默认：qwen3-235b-a22b）
 - `QWEN_TEMPERATURE`: 生成温度（默认：0.5）
-- `QWEN_MAX_TOKENS`: 最大生成 token 数（默认：128000）
+- `QWEN_MAX_TOKENS`: 最大生成 token 数（默认：16384，范围：[1, 16384]）
 
 ## 注意事项
 
