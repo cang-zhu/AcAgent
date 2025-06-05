@@ -26,6 +26,9 @@ class AgentState(TypedDict):
     paper_to_cite_index: int | None # 需要生成引用的文献索引
     citation_style: str | None # 引用格式
     bibtex_input: str | None # 用户输入的 BibTeX 文本
+    pdf_path: str | None # PDF 文件路径
+    pdf_sections: dict | None # PDF 章节内容
+    pdf_analysis: dict | None # PDF 分析结果
 
 # 定义各个节点函数，接收 tools 和 state
 def scholarly_search_node(state: AgentState, tools: AcademicTools) -> AgentState:
@@ -155,6 +158,42 @@ def generate_references_node(state: AgentState, tools: AcademicTools) -> AgentSt
         print(f"[DEBUG] generate_references_node 执行失败: {str(e)}")
         return {**state, "citations": [f"生成引用时发生错误: {str(e)}"]}
 
+def parse_pdf_node(state: AgentState, tools: AcademicTools) -> AgentState:
+    """解析 PDF 文件节点"""
+    print("[DEBUG] 进入 parse_pdf_node")
+    pdf_path = state.get("pdf_path")
+    
+    if not pdf_path:
+        print("[DEBUG] parse_pdf_node: 缺少 PDF 文件路径")
+        return {**state, "pdf_sections": {}}
+        
+    try:
+        # 调用 AcademicTools 中的 PDF 解析方法
+        sections = tools.extract_pdf_sections(pdf_path)
+        print(f"[DEBUG] parse_pdf_node: 成功提取 {len(sections)} 个章节")
+        return {**state, "pdf_sections": sections}
+    except Exception as e:
+        print(f"[DEBUG] parse_pdf_node 执行失败: {str(e)}")
+        return {**state, "pdf_sections": {}}
+
+def analyze_pdf_node(state: AgentState, tools: AcademicTools) -> AgentState:
+    """分析 PDF 内容节点"""
+    print("[DEBUG] 进入 analyze_pdf_node")
+    pdf_path = state.get("pdf_path")
+    
+    if not pdf_path:
+        print("[DEBUG] analyze_pdf_node: 缺少 PDF 文件路径")
+        return {**state, "pdf_analysis": {}}
+        
+    try:
+        # 调用 AcademicTools 中的 PDF 分析方法
+        analysis = tools.analyze_pdf_content(pdf_path)
+        print("[DEBUG] analyze_pdf_node: 成功分析 PDF 内容")
+        return {**state, "pdf_analysis": analysis}
+    except Exception as e:
+        print(f"[DEBUG] analyze_pdf_node 执行失败: {str(e)}")
+        return {**state, "pdf_analysis": {}}
+
 # 定义路由函数
 def route_by_task_type(state: AgentState) -> str:
     print(f"[DEBUG] 进入路由: route_by_task_type, task_type: {state.get('task_type')}")
@@ -169,28 +208,31 @@ def route_by_task_type(state: AgentState) -> str:
         else:
             print("[DEBUG] 未知或未指定搜索方法，路由到 scholarly_search")
             return "scholarly_search" # 默认使用 scholarly
-    elif task_type == "parse_bibtex": # 添加 BibTeX 解析路由
-         return "parse_bibtex"
+    elif task_type == "parse_bibtex":
+        return "parse_bibtex"
+    elif task_type == "parse_pdf": # 添加 PDF 解析路由
+        return "parse_pdf"
+    elif task_type == "analyze_pdf": # 添加 PDF 分析路由
+        return "analyze_pdf"
     elif task_type == "summary":
-        # 总结和引用生成依赖于 literature_results，检查状态中是否有文献结果
         if state.get("literature_results"):
             return "summarize_and_explain"
         else:
-             print("[DEBUG] 总结任务：缺少文献结果，路由到结束")
-             return "__END__" # 没有文献结果无法总结
+            print("[DEBUG] 总结任务：缺少文献结果，路由到结束")
+            return "__END__"
     elif task_type == "references":
-         if state.get("literature_results"):
-             return "generate_references"
-         else:
-             print("[DEBUG] 生成引用任务：缺少文献结果，路由到结束")
-             return "__END__" # 没有文献结果无法生成引用
+        if state.get("literature_results"):
+            return "generate_references"
+        else:
+            print("[DEBUG] 生成引用任务：缺少文献结果，路由到结束")
+            return "__END__"
     elif task_type == "writing":
         return "polish_writing"
     elif task_type == "analysis":
         return "analyze_data"
     else:
         print("[DEBUG] 未知任务类型，结束工作流")
-        return "__END__" # 路由到一个结束点
+        return "__END__"
 
 # 创建工作流图
 def create_academic_workflow() -> Graph:
@@ -198,12 +240,14 @@ def create_academic_workflow() -> Graph:
     workflow = StateGraph(AgentState)
     
     # 实例化工具
-    tools = AcademicTools() # 在这里实例化工具
+    tools = AcademicTools()
     
     # 添加节点，并绑定工具
     workflow.add_node("scholarly_search", lambda state: scholarly_search_node(state, tools))
     workflow.add_node("qwen_search", lambda state: qwen_search_node(state, tools))
-    workflow.add_node("parse_bibtex", lambda state: parse_bibtex_node(state, tools)) # 添加 BibTeX 解析节点
+    workflow.add_node("parse_bibtex", lambda state: parse_bibtex_node(state, tools))
+    workflow.add_node("parse_pdf", lambda state: parse_pdf_node(state, tools)) # 添加 PDF 解析节点
+    workflow.add_node("analyze_pdf", lambda state: analyze_pdf_node(state, tools)) # 添加 PDF 分析节点
     workflow.add_node("summarize_and_explain", lambda state: summarize_and_explain_node(state, tools))
     workflow.add_node("check_citation_validity", lambda state: check_citation_validity_node(state, tools))
     workflow.add_node("polish_writing", lambda state: polish_writing_node(state, tools))
@@ -211,40 +255,39 @@ def create_academic_workflow() -> Graph:
     workflow.add_node("generate_references", lambda state: generate_references_node(state, tools))
     
     # 设置入口点和路由逻辑
-    workflow.set_entry_point("route_by_task_type") # 入口点是路由函数
+    workflow.set_entry_point("route_by_task_type")
     
-    # 添加条件边，从路由函数到各个任务节点或搜索节点
+    # 添加条件边，从路由函数到各个任务节点
     workflow.add_conditional_edges(
         "route_by_task_type",
         route_by_task_type,
         {
             "scholarly_search": "scholarly_search",
             "qwen_search": "qwen_search",
-            "parse_bibtex": "parse_bibtex", # 添加 BibTeX 解析路由目标
+            "parse_bibtex": "parse_bibtex",
+            "parse_pdf": "parse_pdf", # 添加 PDF 解析路由
+            "analyze_pdf": "analyze_pdf", # 添加 PDF 分析路由
             "summarize_and_explain": "summarize_and_explain",
             "polish_writing": "polish_writing",
             "analyze_data": "analyze_data",
             "generate_references": "generate_references",
-            "__END__": "__END__" # 如果路由到 "__END__"，则结束工作流
+            "__END__": "__END__"
         }
     )
     
     # 添加各任务节点完成后的路由
-    # 搜索或 BibTeX 解析完成后，文献结果会更新到 literature_results
-    # 接下来用户可能需要总结或生成引用，所以可以将搜索/解析结果导向一个中间节点或直接由 CLI 根据状态处理
-    # 这里简单处理：搜索或解析完成后直接结束工作流，用户可以在 CLI 中发起新的请求进行总结等
     workflow.add_edge("scholarly_search", "__END__")
     workflow.add_edge("qwen_search", "__END__")
-    workflow.add_edge("parse_bibtex", "__END__") # BibTeX 解析完成后结束
-    
-    # 其他任务节点完成后也直接结束工作流
+    workflow.add_edge("parse_bibtex", "__END__")
+    workflow.add_edge("parse_pdf", "__END__") # PDF 解析完成后结束
+    workflow.add_edge("analyze_pdf", "__END__") # PDF 分析完成后结束
     workflow.add_edge("summarize_and_explain", "__END__")
     workflow.add_edge("check_citation_validity", "__END__")
     workflow.add_edge("polish_writing", "__END__")
     workflow.add_edge("analyze_data", "__END__")
     workflow.add_edge("generate_references", "__END__")
     
-    return workflow.compile() # 编译工作流图
+    return workflow.compile()
 
 # 主函数 (cli.py 会导入和使用 create_academic_workflow)
 # def main():

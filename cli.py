@@ -2,6 +2,7 @@ from academic_agent import create_academic_workflow
 from academic_tools import AcademicTools
 from typing import Dict, Any
 import json
+import os
 
 def print_welcome():
     print("""
@@ -12,6 +13,7 @@ def print_welcome():
 3. 分析研究数据
 4. 生成标准引用
 5. 解析 BibTeX 文本
+6. 解析和分析 PDF 文件
 
 您可以直接用自然语言描述您的需求，例如：
 "请帮我搜索关于人工智能在教育领域的应用" 或 "总结我找到的第1篇文献" 或 "解析以下 BibTeX 文本：..."
@@ -28,6 +30,9 @@ def print_help():
 - **数据分析**: 询问进行某种类型的数据分析。
 - **生成引用**: 请求生成找到的文献的引用格式，例如 "请给我第1篇文献的 APA 引用"。
 - **解析 BibTeX**: 提供 BibTeX 格式的文献信息进行解析，例如 "解析以下 BibTeX：..."
+- **PDF 处理**: 
+  * 解析 PDF 文件：例如 "解析这个 PDF 文件：/path/to/paper.pdf"
+  * 分析 PDF 内容：例如 "分析这个 PDF 文件：/path/to/paper.pdf"
 - **帮助**: 输入 'help'。
 - **退出**: 输入 'exit'。
 
@@ -37,6 +42,8 @@ def print_help():
 润色我的论文引言部分：...
 生成第1篇文献的 MLA 引用
 解析以下 BibTeX：@article{...}
+解析这个 PDF 文件：/path/to/paper.pdf
+分析这个 PDF 文件：/path/to/paper.pdf
     """)
 
 def main():
@@ -59,7 +66,10 @@ def main():
         "paper_to_summarize_index": None,
         "paper_to_cite_index": None,
         "citation_style": None,
-        "bibtex_input": None # 添加 bibtex_input 到状态中
+        "bibtex_input": None,
+        "pdf_path": None, # 添加 PDF 文件路径
+        "pdf_sections": None, # 添加 PDF 章节内容
+        "pdf_analysis": None # 添加 PDF 分析结果
     }
     
     print_welcome()
@@ -68,7 +78,7 @@ def main():
         try:
             # 获取用户输入
             user_input = input("\n请输入您的请求：").strip()
-            session_state["user_input"] = user_input # 更新状态中的用户输入
+            session_state["user_input"] = user_input
             
             # 处理特殊命令
             if user_input.lower() == 'exit':
@@ -79,44 +89,11 @@ def main():
                 continue
             
             # 使用意图识别工具
-            # 更新意图识别的提示词以包含 parse_bibtex
-            intent_prompt = f"""
-            你是一个负责理解用户关于学术研究意图的助手。请分析用户输入的文本，识别用户的意图以及任何相关的参数。支持的意图包括：
-            - search: 搜索学术文献。参数：query (搜索关键词)。
-            - summarize: 总结指定文献。参数：paper_id (文献ID)。
-            - polish: 润色文本。参数：text (需要润色的文本)。
-            - analyze: 数据分析。参数：data_type (数据类型，如 descriptive)。
-            - cite: 生成文献引用。参数：paper_id (文献ID)，style (引用格式，apa或mla，默认为apa)。
-            - parse_bibtex: 解析 BibTeX 文本。参数：bibtex_string (BibTeX 格式的文本)。
-            - help: 查看帮助信息。
-            - exit: 退出程序。
-            - unknown: 无法识别的意图。
-
-            请以 JSON 格式返回结果，包含以下字段：
-            - intent: 识别到的意图（search, summarize, polish, analyze, cite, parse_bibtex, help, exit, unknown）。
-            - parameters: 一个字典，包含与意图相关的参数。如果意图没有参数，parameters 字段应为空字典 {{}}。
-
-            用户输入：{user_input}
-            
-            请只返回 JSON 格式的输出，不要包含任何额外说明文本。
-            """
-            
-            # 调用 AcademicTools 的 identify_intent 方法，将更新后的提示词传递进去
-            # 注意：identify_intent 方法目前没有暴露 prompt 参数，我们需要调整它或者直接在这里构建 messages
-            # 考虑到复用 AcademicTools 中的 API 调用逻辑和错误处理，我们暂时不修改 identify_intent 的签名
-            # 替代方案：在 identify_intent 内部更新 prompt 或者在 CLI 中直接使用 tools.client 调用 API 进行意图识别
-            # 为了保持 AcademicTools 的封装性，我们修改 identify_intent 内部的 prompt
-            # （此修改需要在 academic_tools.py 中进行，这里先假设 identify_intent 已更新）
-            
-            # 或者，更简单的方式是确保 identify_intent 内部的 prompt 已经包含了 parse_bibtex 意图的说明。
-            # 我们之前修改 academic_tools.py 添加 identify_intent 时已经包含了这个意图。
-            # 因此，这里直接调用即可。
-            
             intent_data = tools.identify_intent(user_input)
             intent = intent_data.get('intent', 'unknown')
             parameters = intent_data.get('parameters', {})
 
-            print(f"[DEBUG] 识别到意图: {intent}, 参数: {parameters}") # Debug 输出
+            print(f"[DEBUG] 识别到意图: {intent}, 参数: {parameters}")
 
             # 根据意图设置任务类型和相关参数到状态中
             if intent == "search":
@@ -144,22 +121,49 @@ def main():
                     session_state["task_type"] = None # 重置 task_type
                     continue # 跳过工作流调用
 
-            elif intent == "parse_bibtex": # 处理 parse_bibtex 意图
-                 bibtex_string = parameters.get('bibtex_string', user_input) # 如果参数中没有，尝试使用整个用户输入
-                 if not bibtex_string or not bibtex_string.strip().startswith('@'): # 简单的格式检查
-                      print("抱歉，我没有在您的请求中找到有效的 BibTeX 文本。请提供以 '@' 开头的 BibTeX 格式文本。")
-                      session_state["task_type"] = None
-                      continue
-                      
-                 # 可以选择是否进行确认
-                 # confirm = input("您想让我解析这段 BibTeX 文本吗？(是/否): ").strip().lower()
-                 # if confirm == '是':
-                 session_state["task_type"] = "parse_bibtex"
-                 session_state["bibtex_input"] = bibtex_string # 将 BibTeX 文本存入状态
-                 # else:
-                 #     print("好的，已取消解析请求。")
-                 #     session_state["task_type"] = None
-                 #     continue
+            elif intent == "parse_bibtex":
+                bibtex_string = parameters.get('bibtex_string', user_input) # 如果参数中没有，尝试使用整个用户输入
+                if not bibtex_string or not bibtex_string.strip().startswith('@'): # 简单的格式检查
+                    print("抱歉，我没有在您的请求中找到有效的 BibTeX 文本。请提供以 '@' 开头的 BibTeX 格式文本。")
+                    session_state["task_type"] = None
+                    continue
+                    
+                session_state["task_type"] = "parse_bibtex"
+                session_state["bibtex_input"] = bibtex_string # 将 BibTeX 文本存入状态
+
+            elif intent == "parse_pdf": # 添加 PDF 解析处理
+                pdf_path = parameters.get('pdf_path')
+                if not pdf_path:
+                    print("抱歉，我没有在您的请求中找到 PDF 文件路径。请提供完整的文件路径。")
+                    continue
+                    
+                if not os.path.exists(pdf_path):
+                    print(f"抱歉，找不到文件：{pdf_path}")
+                    continue
+                    
+                if not pdf_path.lower().endswith('.pdf'):
+                    print("抱歉，请提供 PDF 文件。")
+                    continue
+                    
+                session_state["task_type"] = "parse_pdf"
+                session_state["pdf_path"] = pdf_path
+
+            elif intent == "analyze_pdf": # 添加 PDF 分析处理
+                pdf_path = parameters.get('pdf_path')
+                if not pdf_path:
+                    print("抱歉，我没有在您的请求中找到 PDF 文件路径。请提供完整的文件路径。")
+                    continue
+                    
+                if not os.path.exists(pdf_path):
+                    print(f"抱歉，找不到文件：{pdf_path}")
+                    continue
+                    
+                if not pdf_path.lower().endswith('.pdf'):
+                    print("抱歉，请提供 PDF 文件。")
+                    continue
+                    
+                session_state["task_type"] = "analyze_pdf"
+                session_state["pdf_path"] = pdf_path
 
             elif intent == "summarize":
                 paper_id_str = parameters.get('paper_id')
@@ -264,19 +268,23 @@ def main():
                      print(f"[DEBUG] 准备使用 {session_state.get('search_method', '默认方式')} 进行文献搜索...")
                  elif session_state['task_type'] == 'parse_bibtex':
                       print("[DEBUG] 准备解析 BibTeX 文本...")
+                 elif session_state['task_type'] == 'parse_pdf':
+                      print("[DEBUG] 准备解析 PDF 文件...")
+                 elif session_state['task_type'] == 'analyze_pdf':
+                      print("[DEBUG] 准备分析 PDF 内容...")
 
                  print(f"[DEBUG] 执行工作流，任务类型: {session_state['task_type']}")
 
                  # 清空之前的输出结果，避免干扰（保留 literature_results 如果是解析或搜索的结果）
-                 if session_state['task_type'] != 'search' and session_state['task_type'] != 'parse_bibtex':
+                 if session_state['task_type'] not in ['search', 'parse_bibtex', 'parse_pdf', 'analyze_pdf']:
                      session_state["literature_results"] = []
                  session_state["summary"] = None
                  session_state["citations"] = []
                  session_state["analysis_results"] = None
                  session_state["polished_text"] = None
-                 session_state["bibtex_input"] = None # 清空 BibTeX 输入
-                 # search_query 和 search_method 可以在 search 完成后清空，或者在新的 search 意图时覆盖
-                 # 这里暂时不清空，方便调试
+                 session_state["bibtex_input"] = None
+                 session_state["pdf_sections"] = None
+                 session_state["pdf_analysis"] = None
 
                  result = workflow.invoke(session_state)
 
@@ -300,6 +308,31 @@ def main():
                                   print(f"   链接：{paper['url']}")
                      else:
                          print("抱歉，没有找到相关的文献或解析失败。")
+
+                 elif intent == "parse_pdf":
+                     if session_state.get("pdf_sections"):
+                         print("\nPDF 章节内容：")
+                         for section, content in session_state["pdf_sections"].items():
+                             print(f"\n{section.upper()}:")
+                             print(content[:500] + "..." if len(content) > 500 else content)
+                     else:
+                         print("抱歉，无法解析 PDF 文件。")
+
+                 elif intent == "analyze_pdf":
+                     if session_state.get("pdf_analysis"):
+                         analysis = session_state["pdf_analysis"]
+                         print("\nPDF 分析结果：")
+                         print("\n摘要：")
+                         print(analysis.get('summary', '无法生成摘要'))
+                         print("\n关键点：")
+                         for point in analysis.get('key_points', []):
+                             print(f"- {point}")
+                         print("\n研究方法：")
+                         print(analysis.get('methodology', '无法提取研究方法'))
+                         print("\n主要发现：")
+                         print(analysis.get('findings', '无法提取主要发现'))
+                     else:
+                         print("抱歉，无法分析 PDF 内容。")
 
                  elif intent == "summarize":
                      if session_state.get("summary"):
@@ -333,14 +366,18 @@ def main():
             # 在每次交互结束时重置 task_type 和 bibtex_input，以便下一次意图识别
             session_state["task_type"] = None
             session_state["bibtex_input"] = None
-            # search_query 和 search_method 可以在新的 search 意图时覆盖，或在这里选择清空
-            # 这里不清空，保留上下文
+            session_state["pdf_path"] = None
+            session_state["pdf_sections"] = None
+            session_state["pdf_analysis"] = None
 
         except Exception as e:
             print(f"\n发生错误：{str(e)}")
             # 发生错误时也重置 task_type 和 bibtex_input
             session_state["task_type"] = None
             session_state["bibtex_input"] = None
+            session_state["pdf_path"] = None
+            session_state["pdf_sections"] = None
+            session_state["pdf_analysis"] = None
             #print("输入 'help' 查看帮助信息") # 可以选择保留或删除此行
 
 if __name__ == "__main__":
