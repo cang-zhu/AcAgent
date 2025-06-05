@@ -87,9 +87,9 @@ def create_academic_workflow() -> Graph:
     
     # 设置入口和出口
     workflow.set_entry_point("search_literature")
-    workflow.add_terminal_node("polish_writing")
-    workflow.add_terminal_node("analyze_data")
-    workflow.add_terminal_node("generate_references")
+    workflow.set_finish_point("polish_writing")
+    workflow.set_finish_point("analyze_data")
+    workflow.set_finish_point("generate_references")
     
     return workflow.compile()
 
