@@ -1,4 +1,4 @@
-from typing import Annotated, TypedDict, Sequence
+from typing import Annotated, TypedDict, Sequence, List, Dict, Any
 from langgraph.graph import Graph, StateGraph
 from langchain_core.messages import HumanMessage, AIMessage
 # from langchain_openai import ChatOpenAI # 不需要 ChatOpenAI 了，我们直接使用 AcademicTools
@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import os
 from dotenv import load_dotenv
 from academic_tools import AcademicTools # 导入 AcademicTools
+import json
 
 # 加载环境变量
 load_dotenv()
@@ -262,7 +263,7 @@ def create_academic_workflow() -> Graph:
     # 添加条件边，从路由函数到各个任务节点
     workflow.add_conditional_edges(
         "route_by_task_type",
-        route_by_task_type,
+        lambda state: route_by_task_type(state)["next"],
         {
             "scholarly_search": "scholarly_search",
             "qwen_search": "qwen_search",

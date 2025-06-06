@@ -116,11 +116,11 @@ class AcademicTools:
             ]
             
             response = self.client.chat.completions.create(
-                model=self.model_name,
+                model="qwen-plus",  # 暂时固定为 qwen-plus 模型
                 messages=messages,
                 temperature=0.5,
-                max_tokens=self.max_tokens,
-                extra_body={"enable_search": True}
+                max_tokens=8192,
+                extra_body={"enable_search": True, "enable_thinking": False}  # 确保 enable_thinking 为 False
             )
             
             if response and response.choices and response.choices[0].message.content:

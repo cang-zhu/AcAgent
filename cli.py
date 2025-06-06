@@ -275,14 +275,15 @@ def main():
 
                  print(f"[DEBUG] 执行工作流，任务类型: {session_state['task_type']}")
 
-                 # 清空之前的输出结果，避免干扰（保留 literature_results 如果是解析或搜索的结果）
-                 if session_state['task_type'] not in ['search', 'parse_bibtex', 'parse_pdf', 'analyze_pdf']:
-                     session_state["literature_results"] = []
+                 # 清空之前的输出结果（保留文献列表）
+                 # if session_state['task_type'] not in ['search', 'parse_bibtex', 'parse_pdf', 'analyze_pdf']:
+                 #     session_state["literature_results"] = [] # 移除此行
                  session_state["summary"] = None
                  session_state["citations"] = []
                  session_state["analysis_results"] = None
                  session_state["polished_text"] = None
-                 session_state["bibtex_input"] = None
+                 session_state["bibtex_input"] = None # BibTeX input only for the current turn
+                 session_state["pdf_path"] = None # PDF path only for the current turn
                  session_state["pdf_sections"] = None
                  session_state["pdf_analysis"] = None
 
@@ -291,21 +292,23 @@ def main():
                  # 更新会话状态
                  session_state.update(result)
 
-                 # 显示结果 (根据意图进行更自然的输出)
-                 if intent == "search" or intent == "parse_bibtex": # 搜索和解析 BibTeX 都显示文献列表
+                 # 显示结果
+                 if intent == "search" or intent == "parse_bibtex":
                      if session_state.get("literature_results"):
                          print("\n找到以下文献：")
-                         for i, paper in enumerate(session_state["literature_results"], 1):
-                             print(f"\n{i}. {paper.get('title', '未知标题')}")
-                             print(f"   作者：{paper.get('authors', '未知作者')}")
+                         for i, paper in enumerate(session_state["literature_results"]):
+                             print(f"\n{i + 1}. {paper.get('title', '无标题')}")
+                             authors = paper.get('authors', '未知作者')
+                             if isinstance(authors, list):
+                                 print(f"   作者：{', '.join(authors)}")
+                             else:
+                                 print(f"   作者：{authors}")
                              print(f"   年份：{paper.get('year', '未知年份')}")
-                             # 如果有 friendly_summary，也显示
-                             if paper.get('friendly_summary'):
-                                  print(f"   概括：{paper['friendly_summary']}")
-                             elif paper.get('abstract'):
-                                  print(f"   摘要：{paper['abstract'][:200]}...") # 显示部分摘要
+                             # 优先显示 friendly_summary，如果没有则显示 abstract
+                             display_summary = paper.get('friendly_summary', paper.get('abstract', '无摘要'))
+                             print(f"   摘要：{display_summary[:200]}..." if len(display_summary) > 200 else f"   摘要：{display_summary}") # 限制摘要显示长度
                              if paper.get('url'):
-                                  print(f"   链接：{paper['url']}")
+                                 print(f"   链接：{paper['url']}")
                      else:
                          print("抱歉，没有找到相关的文献或解析失败。")
 
@@ -335,6 +338,7 @@ def main():
                          print("抱歉，无法分析 PDF 内容。")
 
                  elif intent == "summarize":
+                     # 总结结果已在 workflow 中生成并更新到 session_state['summary']
                      if session_state.get("summary"):
                          print("\n文献摘要：")
                          print(session_state["summary"])
@@ -342,43 +346,63 @@ def main():
                          print("抱歉，无法生成文献摘要。")
 
                  elif intent == "polish":
+                     # 润色结果已在 workflow 中生成并更新到 session_state['polished_text']
                      if session_state.get("polished_text"):
-                         print("\n润色后的文本：")
+                         print("\n润色结果：")
                          print(session_state["polished_text"])
                      else:
-                         print("抱歉，文本润色失败。")
+                          print("抱歉，无法润色文本。")
 
                  elif intent == "analyze":
-                     if session_state.get("analysis_results"):
-                         print("\n分析结果：")
-                         print(json.dumps(session_state["analysis_results"], indent=2, ensure_ascii=False))
-                     else:
-                         print("抱歉，无法进行数据分析。")
+                      # 数据分析结果已在 workflow 中生成并更新到 session_state['analysis_results']
+                      if session_state.get("analysis_results"):
+                          print("\n数据分析结果：")
+                          # 根据 analysis_results 的结构进行打印，目前没有具体实现，先简单打印
+                          print(session_state["analysis_results"])
+                      else:
+                          print("抱歉，无法进行数据分析。")
 
                  elif intent == "cite":
+                     # 引用结果已在 workflow 中生成并更新到 session_state['citations']
                      if session_state.get("citations"):
-                         print("\n引用格式：")
-                         for citation in session_state["citations"]:
-                             print(citation)
+                          print("\n引用格式：")
+                          for citation in session_state["citations"]:
+                              print(citation)
                      else:
-                         print("抱歉，无法生成引用格式。请确保您已搜索或解析文献，并提供有效的文献编号。")
+                          print("抱歉，无法生成引用格式。请确保您已搜索或解析文献，并提供有效的文献编号。")
 
-            # 在每次交互结束时重置 task_type 和 bibtex_input，以便下一次意图识别
+            # 在每次交互结束时重置某些状态（保留需要在多轮对话中保持的状态）
             session_state["task_type"] = None
             session_state["bibtex_input"] = None
+            # 保留 literature_results 以便进行总结和引用
+            # session_state["literature_results"] = [] # 移除这行或注释掉
+            session_state["summary"] = None
+            session_state["citations"] = []
+            session_state["analysis_results"] = None
+            session_state["user_input"] = None # 保留 user_input 吗？根据需要决定
+            session_state["text_to_polish"] = None
+            session_state["paper_to_summarize_index"] = None
+            session_state["paper_to_cite_index"] = None
+            session_state["citation_style"] = None
             session_state["pdf_path"] = None
             session_state["pdf_sections"] = None
             session_state["pdf_analysis"] = None
 
         except Exception as e:
             print(f"\n发生错误：{str(e)}")
-            # 发生错误时也重置 task_type 和 bibtex_input
+            # 错误发生时也只重置当前任务相关的状态
             session_state["task_type"] = None
             session_state["bibtex_input"] = None
+            session_state["user_input"] = None # 保留 user_input 吗？根据需要决定
+            session_state["text_to_polish"] = None
+            session_state["paper_to_summarize_index"] = None
+            session_state["paper_to_cite_index"] = None
+            session_state["citation_style"] = None
             session_state["pdf_path"] = None
             session_state["pdf_sections"] = None
             session_state["pdf_analysis"] = None
-            #print("输入 'help' 查看帮助信息") # 可以选择保留或删除此行
+            # 保留 literature_results
+            # session_state["literature_results"] = None # 移除这行或注释掉
 
 if __name__ == "__main__":
     main() 
