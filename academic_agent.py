@@ -195,44 +195,44 @@ def analyze_pdf_node(state: AgentState, tools: AcademicTools) -> AgentState:
         return {**state, "pdf_analysis": {}}
 
 # 定义路由函数
-def route_by_task_type(state: AgentState) -> str:
+def route_by_task_type(state: AgentState) -> dict:
     print(f"[DEBUG] 进入路由: route_by_task_type, task_type: {state.get('task_type')}")
     task_type = state.get("task_type")
     
     if task_type == "search":
         search_method = state.get("search_method")
         if search_method == "scholarly":
-            return "scholarly_search"
+            return {"next": "scholarly_search"}
         elif search_method == "qwen":
-            return "qwen_search"
+            return {"next": "qwen_search"}
         else:
             print("[DEBUG] 未知或未指定搜索方法，路由到 scholarly_search")
-            return "scholarly_search" # 默认使用 scholarly
+            return {"next": "scholarly_search"} # 默认使用 scholarly
     elif task_type == "parse_bibtex":
-        return "parse_bibtex"
+        return {"next": "parse_bibtex"}
     elif task_type == "parse_pdf": # 添加 PDF 解析路由
-        return "parse_pdf"
+        return {"next": "parse_pdf"}
     elif task_type == "analyze_pdf": # 添加 PDF 分析路由
-        return "analyze_pdf"
+        return {"next": "analyze_pdf"}
     elif task_type == "summary":
         if state.get("literature_results"):
-            return "summarize_and_explain"
+            return {"next": "summarize_and_explain"}
         else:
             print("[DEBUG] 总结任务：缺少文献结果，路由到结束")
-            return "__END__"
+            return {"next": "__END__"}
     elif task_type == "references":
         if state.get("literature_results"):
-            return "generate_references"
+            return {"next": "generate_references"}
         else:
             print("[DEBUG] 生成引用任务：缺少文献结果，路由到结束")
-            return "__END__"
+            return {"next": "__END__"}
     elif task_type == "writing":
-        return "polish_writing"
+        return {"next": "polish_writing"}
     elif task_type == "analysis":
-        return "analyze_data"
+        return {"next": "analyze_data"}
     else:
         print("[DEBUG] 未知任务类型，结束工作流")
-        return "__END__"
+        return {"next": "__END__"}
 
 # 创建工作流图
 def create_academic_workflow() -> Graph:
@@ -243,6 +243,7 @@ def create_academic_workflow() -> Graph:
     tools = AcademicTools()
     
     # 添加节点，并绑定工具
+    workflow.add_node("route_by_task_type", route_by_task_type)  # 注册路由节点
     workflow.add_node("scholarly_search", lambda state: scholarly_search_node(state, tools))
     workflow.add_node("qwen_search", lambda state: qwen_search_node(state, tools))
     workflow.add_node("parse_bibtex", lambda state: parse_bibtex_node(state, tools))
@@ -253,6 +254,7 @@ def create_academic_workflow() -> Graph:
     workflow.add_node("polish_writing", lambda state: polish_writing_node(state, tools))
     workflow.add_node("analyze_data", lambda state: analyze_data_node(state, tools))
     workflow.add_node("generate_references", lambda state: generate_references_node(state, tools))
+    workflow.add_node("__END__", lambda state: state)  # 注册结束节点
     
     # 设置入口点和路由逻辑
     workflow.set_entry_point("route_by_task_type")
